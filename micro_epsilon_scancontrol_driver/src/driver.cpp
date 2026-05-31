@@ -352,6 +352,44 @@ stop_initialization:
   } else {
     RCLCPP_ERROR_STREAM(this->get_logger(), "Invalid trigger_mode parameter: " << trigger_mode);
   }
+
+  // Apply exposure time and profile frequency if configured.
+  // idle_time = (1e6 / profile_frequency_hz) - exposure_time_us
+  // Both must be set to derive idle time; exposure_time_us alone is also valid.
+  this->declare_parameter<int>("exposure_time_us", 0);
+  this->declare_parameter<double>("profile_frequency_hz", 0.0);
+  int exposure_time_us = this->get_parameter("exposure_time_us").as_int();
+  double profile_frequency_hz = this->get_parameter("profile_frequency_hz").as_double();
+
+  if (exposure_time_us > 0) {
+    if (SetDuration(FEATURE_FUNCTION_EXPOSURE_TIME, static_cast<unsigned int>(exposure_time_us)) < GENERAL_FUNCTION_OK) {
+      RCLCPP_WARN_STREAM(this->get_logger(), "Failed to set exposure_time_us=" << exposure_time_us);
+    } else {
+      RCLCPP_INFO_STREAM(this->get_logger(), "Exposure time set to " << exposure_time_us << " µs");
+    }
+
+    if (profile_frequency_hz > 0.0) {
+      int period_us = static_cast<int>(1e6 / profile_frequency_hz);
+      int idle_time_us = period_us - exposure_time_us;
+      if (idle_time_us < 1) {
+        RCLCPP_WARN_STREAM(this->get_logger(),
+                           "Computed idle_time_us=" << idle_time_us << " is < 1 µs for frequency="
+                           << profile_frequency_hz << " Hz and exposure=" << exposure_time_us
+                           << " µs. Clamping to 1 µs.");
+        idle_time_us = 1;
+      }
+      if (SetDuration(FEATURE_FUNCTION_IDLE_TIME, static_cast<unsigned int>(idle_time_us)) < GENERAL_FUNCTION_OK) {
+        RCLCPP_WARN_STREAM(this->get_logger(), "Failed to set idle_time_us=" << idle_time_us);
+      } else {
+        RCLCPP_INFO_STREAM(this->get_logger(), "Idle time set to " << idle_time_us << " µs ("
+                           << profile_frequency_hz << " Hz profile rate)");
+      }
+    }
+  } else if (profile_frequency_hz > 0.0) {
+    RCLCPP_WARN(this->get_logger(),
+                "profile_frequency_hz is set but exposure_time_us is not — cannot compute idle time. "
+                "Set exposure_time_us to enable frequency control.");
+  }
 }
 /**
  * @brief Initializes and applies the scanCONTROL device resolution.
