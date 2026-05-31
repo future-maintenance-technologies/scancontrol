@@ -94,6 +94,8 @@ ScanControlDriver::ScanControlDriver(const rclcpp::NodeOptions& options)
     }
     else
     {
+
+      
       RCLCPP_WARN_STREAM(this->get_logger(), "Interface not found! Searched for serial = " << config_.serial);
       RCLCPP_INFO_STREAM(this->get_logger(), "Selected interface: " << interface);
     }
@@ -283,8 +285,18 @@ stop_initialization:
       "~/toggle_laser", std::bind(&ScanControlDriver::ServiceToggleLaserPower, this, _1, _2));
 
   uint32_t temp_value;
-  //set function trigger to enc up, inin2in3 with 3000 divider
-  //microepislon 
+
+  // Internal trigger mode:
+
+  GetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], &temp_value);
+  temp_value &= ~0x03000000;
+  SetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], temp_value);
+
+
+  // External trigger mode:
+
+  // set function trigger to enc up, inin2in3 with 3000 divider
+  // microepislon 
   // GetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], &temp_value);
   // temp_value &= ~0x00000FFF;
   // temp_value &= ~0x0000F000;
@@ -294,25 +306,25 @@ stop_initialization:
   // temp_value |= (3 << 16);
   // temp_value |= (1 << 21);
   // temp_value |= (1 << 24);
-  // temp_value |= (1 << 25);
+  // temp_value &= (0 << 25);
 
   // SetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], temp_value);
 
-  // //set encoder divider on
-  // GetFeature(feature2id["FEATURE_FUNCTION_MAINTENANCEFUNCTIONS"], &temp_value);
-  // temp_value &= ~(1 << 3);
-  // temp_value |= (1 << 3);
-  // SetFeature(feature2id["FEATURE_FUNCTION_MAINTENANCEFUNCTIONS"], temp_value);
+//   //set encoder divider on
+//   GetFeature(feature2id["FEATURE_FUNCTION_MAINTENANCEFUNCTIONS"], &temp_value);
+//   temp_value &= ~(1 << 3);
+//   temp_value |= (1 << 3);
+//   SetFeature(feature2id["FEATURE_FUNCTION_MAINTENANCEFUNCTIONS"], temp_value);
 
-  // //set digital io
-  // GetFeature(feature2id["FEATURE_FUNCTION_RS422_INTERFACE_FUNCTION"], &temp_value);
-  // temp_value &= ~(1 << 9);
-  // temp_value &= ~(0xF << 4);
-  // temp_value |= (1 << 4);
-  // temp_value |= (1 << 10);
-  // temp_value |= (1 << 11);
-  // temp_value |= (1 << 8);
-  // SetFeature(feature2id["FEATURE_FUNCTION_RS422_INTERFACE_FUNCTION"], temp_value);
+//   //set digital io
+//   GetFeature(feature2id["FEATURE_FUNCTION_RS422_INTERFACE_FUNCTION"], &temp_value);
+//   temp_value &= ~(1 << 9);
+//   temp_value &= ~(0xF << 4);
+//   temp_value |= (1 << 4);
+//   temp_value |= (1 << 10);
+//   temp_value |= (1 << 11);
+//   temp_value |= (1 << 8);
+//   SetFeature(feature2id["FEATURE_FUNCTION_RS422_INTERFACE_FUNCTION"], temp_value);
 }
 /**
  * @brief Initializes and applies the scanCONTROL device resolution.
