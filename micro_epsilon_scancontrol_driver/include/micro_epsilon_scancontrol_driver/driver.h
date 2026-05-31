@@ -20,8 +20,8 @@
 #include <std_srvs/srv/set_bool.hpp>
 #include <string>
 
-#define MAX_DEVICE_INTERFACE_COUNT 6
-#define MAX_RESOLUTION_COUNT 6
+#define MAX_DEVICE_INTERFACE_COUNT 20
+#define MAX_RESOLUTION_COUNT 20
 #define GENERAL_FUNCTION_FAILED -1
 
 #define DEFAULT_FRAME_ID "scancontrol"

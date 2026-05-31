@@ -1,6 +1,7 @@
 #include "micro_epsilon_scancontrol_driver/driver.h"
 
 #include <rcpputils/join.hpp>
+#include <bitset>
 
 namespace scancontrol_driver
 {
@@ -31,6 +32,9 @@ ScanControlDriver::ScanControlDriver(const rclcpp::NodeOptions& options)
   this->get_parameter_or("partial_profile_point_count", config_.pp_point_count, -1);
   this->declare_parameter<int>("partial_profile_data_width", 8);
   this->get_parameter_or("partial_profile_data_width", config_.pp_point_data_width, 8);
+
+
+
 
   // Create driver interface object:
   device_interface_ptr = std::make_unique<CInterfaceLLT>();
@@ -82,7 +86,9 @@ ScanControlDriver::ScanControlDriver(const rclcpp::NodeOptions& options)
 
     // Check if the available device is the same as the prefered device (if a serial is provided):
     std::string interface(available_interfaces[0]);
-    if ((config_.serial == "") || (interface.find(config_.serial) != std::string::npos))
+    int found = interface.find(config_.serial);
+    RCLCPP_INFO_STREAM(this->get_logger(), "Interface option to select: " << found);
+    if ((config_.serial == "") || (found != std::string::npos))
     {
       RCLCPP_INFO_STREAM(this->get_logger(), "Interface found: " << interface);
     }
@@ -103,7 +109,9 @@ ScanControlDriver::ScanControlDriver(const rclcpp::NodeOptions& options)
       for (int i = 0; i < interface_count; i++)
       {
         std::string interface(available_interfaces[i]);
-        if (interface.find(config_.serial) != std::string::npos)
+        int found = interface.find(config_.serial);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Interface option to select: " << found);
+        if (found != std::string::npos)
         {
           RCLCPP_INFO_STREAM(this->get_logger(), "Interface found: " << interface);
           selected_interface = i;
@@ -273,8 +281,39 @@ stop_initialization:
       "~/get_idle_duration", std::bind(&ScanControlDriver::ServiceGetIdleDuration, this, _1, _2));
   toggle_laser_srv = this->create_service<std_srvs::srv::SetBool>(
       "~/toggle_laser", std::bind(&ScanControlDriver::ServiceToggleLaserPower, this, _1, _2));
-}
 
+  uint32_t temp_value;
+  //set function trigger to enc up, inin2in3 with 3000 divider
+  //microepislon 
+  GetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], &temp_value);
+  temp_value &= ~0x00000FFF;
+  temp_value &= ~0x0000F000;
+  temp_value &= ~0x03000000;
+  temp_value &= ~(7 << 21);
+  temp_value |= (4095  & 0xFFF); //set the divider
+  temp_value |= (3 << 16);
+  temp_value |= (1 << 21);
+  temp_value |= (1 << 24);
+  temp_value |= (1 << 25);
+
+  SetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], temp_value);
+
+  //set encoder divider on
+  GetFeature(feature2id["FEATURE_FUNCTION_MAINTENANCEFUNCTIONS"], &temp_value);
+  temp_value &= ~(1 << 3);
+  temp_value |= (1 << 3);
+  SetFeature(feature2id["FEATURE_FUNCTION_MAINTENANCEFUNCTIONS"], temp_value);
+
+  //set digital io
+  GetFeature(feature2id["FEATURE_FUNCTION_RS422_INTERFACE_FUNCTION"], &temp_value);
+  temp_value &= ~(1 << 9);
+  temp_value &= ~(0xF << 4);
+  temp_value |= (1 << 4);
+  temp_value |= (1 << 10);
+  temp_value |= (1 << 11);
+  temp_value |= (1 << 8);
+  SetFeature(feature2id["FEATURE_FUNCTION_RS422_INTERFACE_FUNCTION"], temp_value);
+}
 /**
  * @brief Initializes and applies the scanCONTROL device resolution.
  *
