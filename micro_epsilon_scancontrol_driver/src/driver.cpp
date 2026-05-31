@@ -2,6 +2,8 @@
 
 #include <rcpputils/join.hpp>
 #include <bitset>
+#include <chrono>
+#include <thread>
 
 namespace scancontrol_driver
 {
@@ -33,6 +35,10 @@ ScanControlDriver::ScanControlDriver(const rclcpp::NodeOptions& options)
   this->declare_parameter<int>("partial_profile_data_width", 8);
   this->get_parameter_or("partial_profile_data_width", config_.pp_point_data_width, 8);
 
+  this->declare_parameter<double>("device_search_timeout", 5.0);
+  double device_search_timeout;
+  this->get_parameter_or("device_search_timeout", device_search_timeout, 5.0);
+
 
 
 
@@ -41,104 +47,94 @@ ScanControlDriver::ScanControlDriver(const rclcpp::NodeOptions& options)
 
   /*
       Search for available scanCONTROL interfaces
-          The code only supports a maximum of MAX_LLT_INTERFACE_COUNT (6) devices. If
-          more are connected the devices found after the 6th are not considdered. This
-          is a limitation of the API, which needs a fixed number of devices to search
-          for. If 6 devices is insufficient, redefine MAX_LLT_INTERFACE_COUNT to
-          accomodate the additional devices.
-  */
-  gint32 interface_count = 0;
-  std::vector<char*> available_interfaces(MAX_DEVICE_INTERFACE_COUNT);
+          Retries for up to 'device_search_timeout' seconds (default 30 s) before
+          giving up and killing the node. This allows other nodes to start normally
+          when one specific device is temporarily unavailable.
 
-  if (auto return_code =
-          device_interface_ptr->GetDeviceInterfaces(&available_interfaces[0], MAX_DEVICE_INTERFACE_COUNT);
-      return_code == ERROR_GETDEVINTERFACE_REQUEST_COUNT)
-  {
-    RCLCPP_WARN_STREAM(this->get_logger(),
-                       "There are more than " << MAX_DEVICE_INTERFACE_COUNT << " scanCONTROL sensors connected.");
-    interface_count = MAX_DEVICE_INTERFACE_COUNT;
-  }
-  else if (return_code < 0)
-  {
-    RCLCPP_WARN_STREAM(this->get_logger(),
-                       "An error occured while searching for connected scanCONTROL devices. Code: " << return_code);
-    interface_count = 0;
-  }
-  else
-  {
-    interface_count = return_code;
-  }
-
-  /*
-      Select scanCONTROL interface
-          A preffered interface can be set by means of the 'serial' parameter.
+          The code only supports a maximum of MAX_DEVICE_INTERFACE_COUNT devices. If
+          more are connected the devices found after that limit are not considered. This
+          is a limitation of the API. If the limit is insufficient, redefine
+          MAX_DEVICE_INTERFACE_COUNT to accommodate the additional devices.
   */
   gint8 selected_interface = -1;
-  if (interface_count == 0)
+  gint32 interface_count = 0;
+  std::vector<char*> available_interfaces(MAX_DEVICE_INTERFACE_COUNT);
   {
-    RCLCPP_WARN(this->get_logger(), "There is no scanCONTROL device connected. Exiting...");
-    goto stop_initialization;
-  }
-  else if (interface_count == 1)
-  {
-    RCLCPP_INFO(this->get_logger(), "There is 1 scanCONTROL device connected.");
-    selected_interface = 0;
+    const auto search_start = std::chrono::steady_clock::now();
 
-    // Check if the available device is the same as the prefered device (if a serial is provided):
-    std::string interface(available_interfaces[0]);
-    int found = interface.find(config_.serial);
-    RCLCPP_INFO_STREAM(this->get_logger(), "Interface option to select: " << found);
-    if ((config_.serial == "") || (found != std::string::npos))
+    while (selected_interface == -1)
     {
-      RCLCPP_INFO_STREAM(this->get_logger(), "Interface found: " << interface);
-    }
-    else
-    {
+      interface_count = 0;
+      available_interfaces.assign(MAX_DEVICE_INTERFACE_COUNT, nullptr);
 
-      
-      RCLCPP_WARN_STREAM(this->get_logger(), "Interface not found! Searched for serial = " << config_.serial);
-      RCLCPP_INFO_STREAM(this->get_logger(), "Selected interface: " << interface);
-    }
-  }
-  else
-  {
-    RCLCPP_INFO_STREAM(this->get_logger(), "There are " << interface_count << " scanCONTROL devices connected.");
-
-    // Select prefered device based on the defined ip or serial. If both are set, this selects the device which ip or
-    // serial is encountered first.
-    if (config_.serial != "")
-    {
-      for (int i = 0; i < interface_count; i++)
+      if (auto return_code =
+              device_interface_ptr->GetDeviceInterfaces(&available_interfaces[0], MAX_DEVICE_INTERFACE_COUNT);
+          return_code == ERROR_GETDEVINTERFACE_REQUEST_COUNT)
       {
-        std::string interface(available_interfaces[i]);
-        int found = interface.find(config_.serial);
-        RCLCPP_INFO_STREAM(this->get_logger(), "Interface option to select: " << found);
-        if (found != std::string::npos)
-        {
-          RCLCPP_INFO_STREAM(this->get_logger(), "Interface found: " << interface);
-          selected_interface = i;
-          break;
-        }
+        RCLCPP_WARN_STREAM(this->get_logger(),
+                           "There are more than " << MAX_DEVICE_INTERFACE_COUNT << " scanCONTROL sensors connected.");
+        interface_count = MAX_DEVICE_INTERFACE_COUNT;
       }
-      // Fallback if serial are not found:
-      if (selected_interface == -1)
+      else if (return_code < 0)
       {
-        RCLCPP_WARN_STREAM(this->get_logger(), "Interface not found! Searched for serial = " << config_.serial);
-        RCLCPP_WARN(this->get_logger(), "Available interfaces:");
-        for (gint8 i = 0; i < interface_count; i++)
-        {
-          RCLCPP_WARN_STREAM(this->get_logger(), "   " << available_interfaces[i]);
-        }
+        RCLCPP_WARN_STREAM(this->get_logger(),
+                           "An error occured while searching for connected scanCONTROL devices. Code: " << return_code);
+        interface_count = 0;
+      }
+      else
+      {
+        interface_count = return_code;
+      }
+
+      if (interface_count == 0)
+      {
+        RCLCPP_WARN(this->get_logger(), "No scanCONTROL devices found, retrying...");
+      }
+      else if (config_.serial.empty())
+      {
+        // No serial specified – select the first available device.
         selected_interface = 0;
         RCLCPP_INFO_STREAM(this->get_logger(),
-                           "\nSelecting first available interface: " << available_interfaces[selected_interface]);
+                           "No 'serial' set, selecting first interface: " << available_interfaces[0]);
       }
-    }
-    else
-    {
-      selected_interface = 0;
-      RCLCPP_INFO_STREAM(this->get_logger(),
-                         "No 'serial' set, selecting first interface: " << available_interfaces[selected_interface]);
+      else
+      {
+        // Search for the device matching the configured serial.
+        RCLCPP_INFO_STREAM(this->get_logger(),
+                           "Searching for serial " << config_.serial << " among " << interface_count
+                                                   << " connected device(s).");
+        for (int i = 0; i < interface_count; i++)
+        {
+          std::string interface(available_interfaces[i]);
+          if (interface.find(config_.serial) != std::string::npos)
+          {
+            RCLCPP_INFO_STREAM(this->get_logger(), "Interface found: " << interface);
+            selected_interface = i;
+            break;
+          }
+        }
+        if (selected_interface == -1)
+        {
+          RCLCPP_WARN_STREAM(this->get_logger(),
+                             "Serial " << config_.serial << " not found among " << interface_count
+                                       << " connected device(s). Retrying...");
+        }
+      }
+
+      if (selected_interface == -1)
+      {
+        const double elapsed_s =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - search_start).count();
+        if (elapsed_s >= device_search_timeout)
+        {
+          RCLCPP_FATAL_STREAM(this->get_logger(),
+                              "Could not find scanCONTROL device with serial '" << config_.serial << "' after "
+                                                                                 << device_search_timeout
+                                                                                 << " s. Shutting down node.");
+          goto stop_initialization;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
     }
   }
 
@@ -156,11 +152,36 @@ ScanControlDriver::ScanControlDriver(const rclcpp::NodeOptions& options)
 
   /*
       Connect to scanCONTROL device
+          Retries for up to 'device_search_timeout' seconds to handle race conditions
+          when multiple nodes connect simultaneously (error -1005: already connected).
   */
-  if (auto return_code = device_interface_ptr->Connect(); return_code < GENERAL_FUNCTION_OK)
   {
-    RCLCPP_FATAL_STREAM(this->get_logger(), "Error while connecting to device! Code: " << return_code);
-    goto stop_initialization;
+    const auto connect_start = std::chrono::steady_clock::now();
+    bool connected = false;
+    while (!connected)
+    {
+      if (auto return_code = device_interface_ptr->Connect(); return_code >= GENERAL_FUNCTION_OK)
+      {
+        connected = true;
+      }
+      else
+      {
+        const double elapsed_s =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - connect_start).count();
+        if (elapsed_s >= device_search_timeout)
+        {
+          RCLCPP_FATAL_STREAM(this->get_logger(),
+                              "Error while connecting to device '" << config_.serial << "' after "
+                                                                   << device_search_timeout
+                                                                   << " s. Code: " << return_code);
+          goto stop_initialization;
+        }
+        RCLCPP_WARN_STREAM(this->get_logger(),
+                           "Could not connect to device '" << config_.serial << "' (code: " << return_code
+                                                           << "), retrying...");
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
+    }
   }
 
   /*
