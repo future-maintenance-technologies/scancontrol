@@ -31,17 +31,14 @@ target_include_directories(driver_component PUBLIC
   ${SCANCONTROL_INCLUDE_DIRS}
 )
 
-ament_target_dependencies(driver_component
-  micro_epsilon_scancontrol_msgs
-  rclcpp
-  rclcpp_components
-  sensor_msgs
-  std_srvs
-  pcl_conversions
-  pcl_ros
-)
-
 target_link_libraries(driver_component
+  ${micro_epsilon_scancontrol_msgs_TARGETS}
+  ${rclcpp_TARGETS}
+  ${rclcpp_components_TARGETS}
+  ${sensor_msgs_TARGETS}
+  ${std_srvs_TARGETS}
+  ${pcl_conversions_TARGETS}
+  ${pcl_ros_TARGETS}
   ${SCANCONTROL_LIBRARIES}
 )
 
