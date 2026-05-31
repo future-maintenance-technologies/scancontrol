@@ -284,47 +284,53 @@ stop_initialization:
   toggle_laser_srv = this->create_service<std_srvs::srv::SetBool>(
       "~/toggle_laser", std::bind(&ScanControlDriver::ServiceToggleLaserPower, this, _1, _2));
 
+  // Declare and get the trigger_mode parameter
+  this->declare_parameter<std::string>("trigger_mode", "internal");
+  auto trigger_mode = this->get_parameter("trigger_mode").as_string();
+
   uint32_t temp_value;
 
-  // Internal trigger mode:
+  // Declare and get the divider parameter
+  this->declare_parameter<int>("divider", 4095);
+  auto divider = this->get_parameter("divider").as_int();
 
-  GetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], &temp_value);
-  temp_value &= ~0x03000000;
-  SetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], temp_value);
+  if (trigger_mode == "internal") {
+    // Internal trigger mode
+    GetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], &temp_value);
+    temp_value &= ~0x03000000;
+    SetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], temp_value);
+  } else if (trigger_mode == "external") {
+    // External trigger mode
+    GetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], &temp_value);
+    temp_value &= ~0x00000FFF;
+    temp_value &= ~0x0000F000;
+    temp_value &= ~0x03000000;
+    temp_value &= ~(7 << 21);
+    temp_value |= (divider & 0xFFF); // set the divider
+    temp_value |= (3 << 16);
+    temp_value |= (1 << 21);
+    temp_value |= (1 << 24);
+    temp_value &= (0 << 25);
+    SetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], temp_value);
 
+    // Set encoder divider on
+    GetFeature(feature2id["FEATURE_FUNCTION_MAINTENANCEFUNCTIONS"], &temp_value);
+    temp_value &= ~(1 << 3);
+    temp_value |= (1 << 3);
+    SetFeature(feature2id["FEATURE_FUNCTION_MAINTENANCEFUNCTIONS"], temp_value);
 
-  // External trigger mode:
-
-  // set function trigger to enc up, inin2in3 with 3000 divider
-  // microepislon 
-  // GetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], &temp_value);
-  // temp_value &= ~0x00000FFF;
-  // temp_value &= ~0x0000F000;
-  // temp_value &= ~0x03000000;
-  // temp_value &= ~(7 << 21);
-  // temp_value |= (4095  & 0xFFF); //set the divider
-  // temp_value |= (3 << 16);
-  // temp_value |= (1 << 21);
-  // temp_value |= (1 << 24);
-  // temp_value &= (0 << 25);
-
-  // SetFeature(feature2id["FEATURE_FUNCTION_TRIGGER"], temp_value);
-
-//   //set encoder divider on
-//   GetFeature(feature2id["FEATURE_FUNCTION_MAINTENANCEFUNCTIONS"], &temp_value);
-//   temp_value &= ~(1 << 3);
-//   temp_value |= (1 << 3);
-//   SetFeature(feature2id["FEATURE_FUNCTION_MAINTENANCEFUNCTIONS"], temp_value);
-
-//   //set digital io
-//   GetFeature(feature2id["FEATURE_FUNCTION_RS422_INTERFACE_FUNCTION"], &temp_value);
-//   temp_value &= ~(1 << 9);
-//   temp_value &= ~(0xF << 4);
-//   temp_value |= (1 << 4);
-//   temp_value |= (1 << 10);
-//   temp_value |= (1 << 11);
-//   temp_value |= (1 << 8);
-//   SetFeature(feature2id["FEATURE_FUNCTION_RS422_INTERFACE_FUNCTION"], temp_value);
+    // Set digital IO
+    GetFeature(feature2id["FEATURE_FUNCTION_RS422_INTERFACE_FUNCTION"], &temp_value);
+    temp_value &= ~(1 << 9);
+    temp_value &= ~(0xF << 4);
+    temp_value |= (1 << 4);
+    temp_value |= (1 << 10);
+    temp_value |= (1 << 11);
+    temp_value |= (1 << 8);
+    SetFeature(feature2id["FEATURE_FUNCTION_RS422_INTERFACE_FUNCTION"], temp_value);
+  } else {
+    RCLCPP_ERROR_STREAM(this->get_logger(), "Invalid trigger_mode parameter: " << trigger_mode);
+  }
 }
 /**
  * @brief Initializes and applies the scanCONTROL device resolution.
@@ -761,10 +767,6 @@ void ScanControlDriver::ServiceInvertX(const std::shared_ptr<std_srvs::srv::SetB
         std::string("Failed to get 'Profile Data Processing' feature. Error code: ") + std::to_string(return_code);
     return;
   }
-
-  // Set 6th bit according to the SetBool service request
-  value = value & ~(1 << 7);
-  if (request->data)
   {
     value |= (1 << 7);
   }
