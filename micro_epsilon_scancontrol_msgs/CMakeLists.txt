@@ -22,6 +22,7 @@ set(srv_files
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/ProfileTiming.msg"
   ${srv_files}
   DEPENDENCIES
     builtin_interfaces

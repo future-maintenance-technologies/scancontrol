@@ -7,6 +7,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 
 #include <memory>
+#include <micro_epsilon_scancontrol_msgs/msg/profile_timing.hpp>
 #include <micro_epsilon_scancontrol_msgs/srv/get_available_resolutions.hpp>
 #include <micro_epsilon_scancontrol_msgs/srv/get_duration.hpp>
 #include <micro_epsilon_scancontrol_msgs/srv/get_feature.hpp>
@@ -110,6 +111,7 @@ private:
 
   // ROS handles
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher;
+  rclcpp::Publisher<micro_epsilon_scancontrol_msgs::msg::ProfileTiming>::SharedPtr timing_publisher;
   rclcpp::Service<micro_epsilon_scancontrol_msgs::srv::GetFeature>::SharedPtr get_feature_srv;
   rclcpp::Service<micro_epsilon_scancontrol_msgs::srv::SetFeature>::SharedPtr set_feature_srv;
   rclcpp::Service<micro_epsilon_scancontrol_msgs::srv::GetResolution>::SharedPtr get_resolution_srv;

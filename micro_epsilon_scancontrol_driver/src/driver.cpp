@@ -275,6 +275,8 @@ stop_initialization:
 
   // Advertise topic
   publisher = this->create_publisher<sensor_msgs::msg::PointCloud2>(config_.topic_name, 10);
+  timing_publisher =
+      this->create_publisher<micro_epsilon_scancontrol_msgs::msg::ProfileTiming>(config_.topic_name + "_timing", 10);
 
   using std::placeholders::_1;
   using std::placeholders::_2;
@@ -587,6 +589,15 @@ int ScanControlDriver::ProcessAndPublishProfile(const void* data, size_t data_si
   pcl::toROSMsg<pcl::PointXYZI>(*point_cloud_msg, output_msg);
 
   publisher->publish(output_msg);
+
+  // The sensor's own timing sits in the last 16 bytes of the profile: lets a gap in host stamps be told apart
+  // as lost profiles (profile_number skips) or late delivery (sensor clock evenly paced).
+  micro_epsilon_scancontrol_msgs::msg::ProfileTiming timing;
+  timing.header = output_msg.header;
+  CInterfaceLLT::Timestamp2TimeAndCount(&profile_buffer[profile_buffer.size() - 16], &timing.shutter_opened,
+                                        &timing.shutter_closed, &timing.profile_number,
+                                        &timing.enc_times2_or_digin);
+  timing_publisher->publish(timing);
 
   return GENERAL_FUNCTION_OK;
 }
